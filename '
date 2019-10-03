@@ -7,7 +7,6 @@ import threading
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
 import pyaudio
 
 DEFAULT_DEVICE = 'Stereo Mix (Realtek'
@@ -32,30 +31,30 @@ class Listener:
                               rate=self.RATE,
                               frames_per_buffer=self.CHUNK,
                               stream_callback=self.new_window)
-        self.lock = threading.Lock()
+        #self.lock = threading.Lock()
         self.stop = False
         self.windows = [np.zeros(self.CHUNK*self.WINDOWSIZE) for i in range(self.CHANNELS)]
-        atexit.register(self.close)
+        #atexit.register(self.close)
 
     def new_window(self, data, *args, **kwargs):
         data = np.fromstring(data, 'int16')
-        with self.lock:
-            for i in range(self.CHANNELS):
-                self.windows[i] = np.concatenate((self.windows[i],data[i::self.CHANNELS]), axis=None)
-                self.windows[i] = self.windows[i][self.CHUNK:]
-                if self.stop: return None, pyaudio.paComplete
+        #with self.lock:
+        for i in range(self.CHANNELS):
+            self.windows[i] = np.concatenate((self.windows[i],data[i::self.CHANNELS]), axis=None)
+            self.windows[i] = self.windows[i][self.CHUNK:]
+            if self.stop: return None, pyaudio.paComplete
         return None, pyaudio.paContinue
 
     def get_windows(self):
-        with self.lock:
-            return self.windows
+        #with self.lock:
+        return self.windows
 
     def start(self):
         self.stream.start_stream()
 
     def close(self):
-        with self.lock:
-            self.stop = True
+        #with self.lock:
+        self.stop = True
         self.stream.close()
         self.p.terminate()
 
@@ -67,6 +66,8 @@ class Widget:
         self.init_fig(args)
 
     def init_pyaudio(self, args):
+        self.fig = plt.figure()
+        self.fig.show()
         if not args: DEVICE = DEFAULT_DEVICE
         else: DEVICE = args[0]
         self.l = Listener(DEVICE)
@@ -78,7 +79,11 @@ class Widget:
         self.freq_vect = np.fft.rfftfreq(n, 1./self.l.RATE)
         self.time_vect = np.arange(n, dtype=np.float32) / self.l.RATE * 1000
 
-        self.fig = plt.figure()
+        print(n)
+
+        print(self.freq_vect.size)
+        print(self.time_vect.size)
+
         # plot settings
         self.axRaw = plt.subplot2grid((5,1),(0,0), rowspan=2)
         self.axFrq = plt.subplot2grid((5,1),(2,0), rowspan=3) 
@@ -97,7 +102,7 @@ class Widget:
         anim = FuncAnimation(self.fig, self.start_listening, interval=int(1000/DEFAULT_FPS)) 
         self.fig.show()
 
-    def start_listening(self, *args, **kwargs):
+    def start_listening(self):
         windows = self.l.get_windows()
         self.lineRawL.set_ydata(windows[0][::DRAWRATE]) 
         self.lineRawR.set_ydata(windows[1][::DRAWRATE]) 
