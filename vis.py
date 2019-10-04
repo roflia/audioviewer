@@ -9,12 +9,13 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.ticker import FuncFormatter
+from scipy.interpolate import interp1d
 import pyaudio
 
 warnings.filterwarnings('ignore')
 DEFAULT_DEVICE = 'Stereo Mix (Realtek'
 DEFAULT_FPS = 30
-DEFAULT_WINDOWSIZE = 5
+DEFAULT_WINDOWSIZE = 5*2
 RESOLUTION = 512
 
 FCOLOR = 'black'
@@ -99,6 +100,7 @@ class Widget:
         self.freq_vect = np.fft.rfftfreq(n, 1./self.l.RATE)
         self.time_vect = np.arange(n, dtype=np.float32) / self.l.RATE * 1000
         self.fftMaxes = [THRESH,THRESH]        
+        self.t_ref = time.time()
 
         # plot objects        
         self.fig = plt.figure()
@@ -109,8 +111,9 @@ class Widget:
         self.lineFrqL, = self.axFrq.plot(self.freq_vect[::self.DR], np.ones_like(self.freq_vect)[::self.DR], Lcolor)
         self.lineFrqR, = self.axFrq.plot(self.freq_vect[::self.DR], np.ones_like(self.freq_vect)[::self.DR], Rcolor)
         # top plot
+        ylim = 32768/2
         self.axRaw.set_title("RAW", loc='left')
-        self.axRaw.set_ylim(-32768, 32768)
+        self.axRaw.set_ylim(-ylim, ylim)
         self.axRaw.set_xlim([0, self.time_vect.max()])
         self.axRaw.set_yticks([0])
         self.axRaw.set_xticks([self.time_vect.max()])
@@ -120,9 +123,10 @@ class Widget:
         # bot plot
         self.axFrq.set_title("FRQ (rFFT)", loc='left')
         self.axFrq.set_yscale('log')
+        #self.axFrq.set_xscale('log')
         self.axFrq.set_ylim(THRESH*5, 1)
-        self.axFrq.set_xlim(0, 20000)
-        self.axFrq.set_xticks([0, 5000, 10000, 15000, 20000])
+        self.axFrq.set_xlim(20, 20000)
+        self.axFrq.set_xticks([20, 5000, 20000])
         self.axFrq.set_yticks([0.01, 1])
         self.axFrq.yaxis.set_major_formatter(
             FuncFormatter(lambda y, pos: "{:.2f}".format(y))
@@ -130,27 +134,53 @@ class Widget:
         self.axFrq.xaxis.set_major_formatter(
             FuncFormatter(lambda x, pos: "{:d}KHz".format(int(x/1000)) if (x != 0) else "{:d}".format(int(x)))
         )
+        self.textFPSx = 0.90*max(self.time_vect)
+        self.textFPSy = 1.10*ylim
+            
+        self.textFPS = self.axRaw.text(self.textFPSx, self.textFPSy, 'FPS: 000')
     
 
         plt.tight_layout()
-        anim = FuncAnimation(self.fig, self.start_listening, interval=int(1000/DEFAULT_FPS)) 
+        anim = FuncAnimation(self.fig, self.start_listening, self.listen_data, interval=int(1000/DEFAULT_FPS), blit=True)
+        #mng = plt.get_current_fig_manager()
+        #mng.window.state('zoomed')
         plt.show()
 
-    def start_listening(self, *args, **kwargs):
-        try:
+
+
+    def listen_data(self):
+        while True:
             windows = self.l.get_windows()
+            yield windows
+
+    def start_listening(self, windows, *args, **kwargs):
+        try:
             #if np.average(np.abs(windows)) < 5: return
 
             self.lineRawL.set_ydata(windows[0][::self.DR][::-1]) 
             self.lineRawR.set_ydata(windows[1][::self.DR][::-1]) 
             
-            fftL = np.fft.rfft(windows[0], self.l.CHUNK*self.l.WINDOWSIZE, axis=0)
-            fftR = np.fft.rfft(windows[1], self.l.CHUNK*self.l.WINDOWSIZE, axis=0)        
-            if max(fftL)>self.fftMaxes[0]: self.fftMaxes[0] = max(fftL) 
-            if max(fftR)>self.fftMaxes[1]: self.fftMaxes[1] = max(fftR) 
+            fftL = np.fft.rfft(windows[0], self.l.CHUNK*self.l.WINDOWSIZE, axis=0, norm="ortho")
+            fftR = np.fft.rfft(windows[1], self.l.CHUNK*self.l.WINDOWSIZE, axis=0, norm="ortho")        
+            if fftL.max()>self.fftMaxes[0]: self.fftMaxes[0] = fftL.max() 
+            if fftR.max()>self.fftMaxes[1]: self.fftMaxes[1] = fftR.max() 
+    
+            #sfftL = interp1d(self.freq_vect[::self.DR], fftL[::self.DR]/self.fftMaxes[0], fill_value="extrapolate")
+            #sfftR = interp1d(self.freq_vect[::self.DR], fftR[::self.DR]/self.fftMaxes[1], fill_value="extrapolate")
+            #self.lineFrqL.set_ydata(sfftL(self.freq_vect)[::self.DR])
+            #self.lineFrqR.set_ydata(sfftR(self.freq_vect)[::self.DR])
+
             self.lineFrqL.set_ydata(fftL[::self.DR]/self.fftMaxes[0])
             self.lineFrqR.set_ydata(fftR[::self.DR]/self.fftMaxes[1])
-        except e:
+            
+            delta_t = time.time()-self.t_ref
+            self.t_ref = time.time()
+
+            self.textFPS.set_text('FPS: {0:0=3d}'.format(int(1/delta_t)))
+
+            return tuple([self.lineRawL, self.lineRawR, self.lineFrqL, self.lineFrqR])
+            
+        except Exception as e:
             print(e) 
         
 
