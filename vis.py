@@ -2,31 +2,44 @@ import sys
 import time
 import atexit
 import warnings
-
 import threading
+
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.ticker import FuncFormatter
-from scipy.interpolate import interp1d
 import pyaudio
-
-warnings.filterwarnings('ignore')
+warnings.filterwarnings('ignore') # suppress numpy warning... why is this showing up?
+    
+# WIDGET OPTIONS
 DEFAULT_DEVICE = 'Stereo Mix (Realtek'
-DEFAULT_FPS = 30
-DEFAULT_WINDOWSIZE = 2
-RESOLUTION = 512*2
+DEFAULT_FPS = int(60)
+DEFAULT_WINDOWSIZE = int(2*2)
+RESOLUTION = int(512)
+NBINS = int(64)
 
+# WIDGET COLOR
 FCOLOR = 'black'
 BCOLOR = 'white'
 mpl.rcParams['text.color'] = BCOLOR
 mpl.rcParams['figure.facecolor'] = FCOLOR
 mpl.rcParams['figure.edgecolor'] = BCOLOR
+mpl.rcParams['figure.subplot.left'] = 0.06 
+mpl.rcParams['figure.subplot.right'] = 0.94 
+mpl.rcParams['figure.subplot.bottom'] = 0.06
+mpl.rcParams['figure.subplot.top'] = 0.94
+mpl.rcParams['figure.subplot.wspace'] = 0 
+mpl.rcParams['figure.subplot.hspace'] = 0 
+
 mpl.rcParams['legend.facecolor'] = FCOLOR
 mpl.rcParams['legend.edgecolor'] = FCOLOR
+mpl.rcParams['legend.framealpha'] = 0
 mpl.rcParams['axes.facecolor'] = FCOLOR
+mpl.rcParams['axes.titlepad'] = 0 
 mpl.rcParams['axes.edgecolor'] = BCOLOR
+mpl.rcParams['xtick.major.pad'] = 0 
+mpl.rcParams['ytick.major.pad'] = 0 
 mpl.rcParams['ytick.color'] = BCOLOR
 mpl.rcParams['xtick.color'] = BCOLOR
 mpl.rcParams['axes.spines.bottom'] = False 
@@ -37,8 +50,8 @@ mpl.rcParams['toolbar'] = 'None'
 
 class Listener:
     def __init__(self, device):
-        self.DEVICE = device
         self.FORMAT = pyaudio.paInt16
+        self.DEVICE = device
         self.RATE = 44100 
         self.FPS = DEFAULT_FPS
         self.CHANNELS = 2 
@@ -46,6 +59,7 @@ class Listener:
         self.CHUNK = int(self.RATE/self.FPS)
         self.WINDOWSIZE = DEFAULT_WINDOWSIZE
         self.p = pyaudio.PyAudio()
+        #self.p.get_device_info_by_index(self.)
         self.stream = self.p.open(format=self.FORMAT,
                               input=True,
                               channels=self.CHANNELS,
@@ -85,34 +99,49 @@ class Widget:
         self.init_pyaudio(args)
         self.init_fig(args)
 
+    def fig_resized(self, *args, **kwargs):
+        self.size = self.fig.get_size_inches()*self.fig.dpi
+
     def init_pyaudio(self, args):
-        if not args: DEVICE = DEFAULT_DEVICE
-        else: DEVICE = args[0]
-        self.l = Listener(DEVICE)
+        if not args: self.DEVICE = DEFAULT_DEVICE
+        else: self.DEVICE = args[0]
+        self.l = Listener(self.DEVICE)
         self.l.start()
+        self.n = self.l.CHUNK*self.l.WINDOWSIZE
         
     def init_fig(self, args):
         Lcolor = 'red'; Rcolor = 'blue';
-        n = self.l.CHUNK*self.l.WINDOWSIZE
-        self.DR = n//RESOLUTION
+        self.DR = self.n//RESOLUTION
         THRESH = 1/self.l.RATE
-        self.freq_vect = np.fft.fftfreq(n, 1./self.l.RATE)[:int(n/2)]
-        self.time_vect = np.arange(n, dtype=np.float32) / self.l.RATE * 1000
+        self.freq_vect = np.fft.fftfreq(self.n, 1./self.l.RATE)[:int(self.n/2)]
+        self.time_vect = np.arange(self.n, dtype=np.float32) / self.l.RATE * 1000
         self.fftMaxes = [THRESH,THRESH]        
         self.t_ref = time.time()
 
         # plot objects        
         self.fig = plt.figure()
-        self.fig.set_size_inches(8,5)
-        self.axRaw = plt.subplot2grid((5,1),(0,0), rowspan=2)
-        self.axFrq = plt.subplot2grid((5,1),(2,0), rowspan=3) 
-        self.lineRawL, = self.axRaw.plot(self.time_vect[::self.DR], np.zeros(len(self.time_vect))[::self.DR], Lcolor)
-        self.lineRawR, = self.axRaw.plot(self.time_vect[::self.DR], np.zeros(len(self.time_vect))[::self.DR], Rcolor)
-        self.lineFrqL, = self.axFrq.plot(self.freq_vect[::self.DR], np.ones_like(self.freq_vect)[::self.DR], Lcolor, label='L')
-        self.lineFrqR, = self.axFrq.plot(self.freq_vect[::self.DR], np.ones_like(self.freq_vect)[::self.DR], Rcolor, label='R')
+        self.fig.set_size_inches(1300/200,800/200)
+        self.size = self.fig.get_size_inches()*self.fig.dpi # size in pixels
+        self.cid = self.fig.canvas.mpl_connect('resize_event', self.fig_resized)
+        self.BARWIDTH = self.size[0]*0.5/NBINS*self.fig.dpi/2
+
+        self.barY = self.freq_vect[::len(self.freq_vect)//NBINS+1]
+        self.barX = np.linspace(20,max(self.freq_vect),NBINS)
+ 
+        self.axRaw = plt.subplot2grid((10,1),(0,0), rowspan=3)
+        self.axFrq = plt.subplot2grid((10,1),(4,0), rowspan=4) 
+        self.axBar = plt.subplot2grid((10,1),(9,0), rowspan=1) 
+        self.lineRawL, = self.axRaw.plot(self.time_vect[::self.DR*2], np.zeros(len(self.time_vect))[::self.DR*2], Lcolor, label='$L_{r}$')
+        self.lineRawR, = self.axRaw.plot(self.time_vect[::self.DR*2], np.zeros(len(self.time_vect))[::self.DR*2], Rcolor, label='$R_{r}$')
+        self.lineFrqL, = self.axFrq.plot(self.freq_vect[::self.DR], np.ones_like(self.freq_vect)[::self.DR], Lcolor, label='$L_{f}$')
+        self.lineFrqR, = self.axFrq.plot(self.freq_vect[::self.DR], np.ones_like(self.freq_vect)[::self.DR], Rcolor, label='$R_{f}$')
+
+        self.barFrqL = self.axBar.bar(self.barX, self.barY, width=self.BARWIDTH, color='magenta', alpha=0.8)
+        self.barFrqR = self.axBar.bar(self.barX, self.barY, width=self.BARWIDTH, color='cyan', alpha=0.8)
+
         # top plot
         ylim = 32768/2
-        self.axRaw.set_title("RAW", loc='left')
+        self.axRaw.set_title("RAW - {})".format(self.DEVICE), loc='left')
         self.axRaw.set_ylim(-ylim, ylim)
         self.axRaw.set_xlim([0, self.time_vect.max()])
         self.axRaw.set_yticks([0])
@@ -122,32 +151,38 @@ class Widget:
         )
         # bot plot
         self.axFrq.set_title("FRQ", loc='left')
-        #self.axFrq.set_yscale('log')
-        #self.axFrq.set_xscale('log')
         self.axFrq.set_ylim(THRESH*5, 1)
         self.axFrq.set_xlim(20, 20000)
-        self.axFrq.set_xticks([20, 5000, 20000])
+        self.axFrq.set_xticks([])
         self.axFrq.set_yticks([0.01, 1])
         self.axFrq.yaxis.set_major_formatter(
             FuncFormatter(lambda y, pos: "{:.2f}".format(y))
         )
-        self.axFrq.xaxis.set_major_formatter(
+        self.axBar.set_yscale('log')
+        self.axBar.set_title('',pad=0)
+        self.axBar.spines['top'].set_visible(False)
+        self.axBar.set_ylim(THRESH*5, 1)
+        self.axBar.set_xlim(20, 20000)
+        self.axBar.set_xticks([20, 5000, 20000])
+        self.axBar.set_yticks([])
+        self.axBar.xaxis.set_major_formatter(
             FuncFormatter(lambda x, pos: "{:d}KHz".format(int(x/1000)) if (x != 0) else "{:d}".format(int(x)))
         )
-        self.textFPSx = 0.89*max(self.time_vect)
+
+        # xy location of FPS text
+        sc = self.size[0]/self.fig.dpi/6.5
+        #print(sc) #DO RELATIVE TXT LOCATION TODO
+
+        self.textFPSx = (0.90*sc)*max(self.time_vect)
         self.textFPSy = 1.10*ylim
-            
         self.textFPS = self.axRaw.text(self.textFPSx, self.textFPSy, 'FPS: 000')
     
-
-        plt.legend(handles=[self.lineFrqL, self.lineFrqR])
-        plt.tight_layout()
-        anim = FuncAnimation(self.fig, self.start_listening, self.listen_data, interval=int(1000/DEFAULT_FPS), blit=True)
-        #mng = plt.get_current_fig_manager()
-        #mng.window.state('zoomed')
+        plt.legend(handles=[self.lineFrqL, self.lineFrqR], loc=((0.90*sc), (4.5*sc)))
+        #plt.subplots_adjust(bottom=0.1, left=0.1)
+        #plt.tight_layout()
+        anim = FuncAnimation(self.fig, self.start_listening, self.listen_data, \
+            interval=int(1000/DEFAULT_FPS), blit=True)
         plt.show()
-
-
 
     def listen_data(self):
         while True:
@@ -156,31 +191,32 @@ class Widget:
 
     def start_listening(self, windows, *args, **kwargs):
         try:
-            #if np.average(np.abs(windows)) < 5: return
-            n = self.l.CHUNK*self.l.WINDOWSIZE
-
-            self.lineRawL.set_ydata(windows[0][::self.DR][::-1]) 
-            self.lineRawR.set_ydata(windows[1][::self.DR][::-1]) 
-            
-            fftL = np.fft.fft(windows[0], n, axis=0, norm="ortho")
-            fftR = np.fft.fft(windows[1], n, axis=0, norm="ortho")        
+            # show top axes lines
+            self.lineRawL.set_ydata(windows[0][::self.DR*2][::-1]) 
+            self.lineRawR.set_ydata(windows[1][::self.DR*2][::-1]) 
+            # show bottom axes lines
+            norm = None #"ortho"
+            fftL = np.fft.fft(windows[0], self.n, axis=0, norm=norm)
+            fftR = np.fft.fft(windows[1], self.n, axis=0, norm=norm)        
             if fftL.max()>self.fftMaxes[0]: self.fftMaxes[0] = fftL.max() 
             if fftR.max()>self.fftMaxes[1]: self.fftMaxes[1] = fftR.max() 
-    
-            #sfftL = interp1d(self.freq_vect[::self.DR], fftL[::self.DR]/self.fftMaxes[0], fill_value="extrapolate")
-            #sfftR = interp1d(self.freq_vect[::self.DR], fftR[::self.DR]/self.fftMaxes[1], fill_value="extrapolate")
-            #self.lineFrqL.set_ydata(sfftL(self.freq_vect)[::self.DR])
-            #self.lineFrqR.set_ydata(sfftR(self.freq_vect)[::self.DR])
-
-            self.lineFrqL.set_ydata(fftL[:int(n/2):self.DR]/self.fftMaxes[0])
-            self.lineFrqR.set_ydata(fftR[:int(n/2):self.DR]/self.fftMaxes[1])
-            
+            fftLNorm = abs(fftL)[:int(self.n/2)]/self.fftMaxes[0]
+            fftRNorm = abs(fftR)[:int(self.n/2)]/self.fftMaxes[1]
+            self.lineFrqL.set_ydata(fftLNorm[::self.DR])
+            self.lineFrqR.set_ydata(fftRNorm[::self.DR])
+            # update bar rectangles
+            for bar, h in zip(self.barFrqL, fftLNorm[::len(fftLNorm)//NBINS+1]):
+                bar.set_height(h)
+            for bar, h in zip(self.barFrqR, fftRNorm[::len(fftRNorm)//NBINS+1]):
+                bar.set_height(h)
+            # calc FPS and show
             delta_t = time.time()-self.t_ref
             self.t_ref = time.time()
-
             self.textFPS.set_text('FPS: {0:0=3d}'.format(int(1/delta_t)))
-
-            return tuple([self.lineRawL, self.lineRawR, self.lineFrqL, self.lineFrqR])
+            # return value
+            artObj = tuple([self.lineRawL, self.lineRawR, self.lineFrqL, \
+                self.lineFrqR ]) + tuple(self.barFrqL) + tuple(self.barFrqR)
+            return artObj
             
         except Exception as e:
             print(e) 
