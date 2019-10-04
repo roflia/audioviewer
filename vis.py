@@ -24,10 +24,9 @@ mpl.rcParams['text.color'] = BCOLOR
 mpl.rcParams['figure.facecolor'] = FCOLOR
 mpl.rcParams['figure.edgecolor'] = BCOLOR
 mpl.rcParams['legend.facecolor'] = FCOLOR
-mpl.rcParams['legend.edgecolor'] = BCOLOR
+mpl.rcParams['legend.edgecolor'] = FCOLOR
 mpl.rcParams['axes.facecolor'] = FCOLOR
 mpl.rcParams['axes.edgecolor'] = BCOLOR
-mpl.rcParams['axes.labelcolor'] = BCOLOR
 mpl.rcParams['ytick.color'] = BCOLOR
 mpl.rcParams['xtick.color'] = BCOLOR
 mpl.rcParams['axes.spines.bottom'] = False 
@@ -109,8 +108,8 @@ class Widget:
         self.axFrq = plt.subplot2grid((5,1),(2,0), rowspan=3) 
         self.lineRawL, = self.axRaw.plot(self.time_vect[::self.DR], np.zeros(len(self.time_vect))[::self.DR], Lcolor)
         self.lineRawR, = self.axRaw.plot(self.time_vect[::self.DR], np.zeros(len(self.time_vect))[::self.DR], Rcolor)
-        self.lineFrqL, = self.axFrq.plot(self.freq_vect[::self.DR], np.ones_like(self.freq_vect)[::self.DR], Lcolor)
-        self.lineFrqR, = self.axFrq.plot(self.freq_vect[::self.DR], np.ones_like(self.freq_vect)[::self.DR], Rcolor)
+        self.lineFrqL, = self.axFrq.plot(self.freq_vect[::self.DR], np.ones_like(self.freq_vect)[::self.DR], Lcolor, label='L')
+        self.lineFrqR, = self.axFrq.plot(self.freq_vect[::self.DR], np.ones_like(self.freq_vect)[::self.DR], Rcolor, label='R')
         # top plot
         ylim = 32768/2
         self.axRaw.set_title("RAW", loc='left')
@@ -135,12 +134,13 @@ class Widget:
         self.axFrq.xaxis.set_major_formatter(
             FuncFormatter(lambda x, pos: "{:d}KHz".format(int(x/1000)) if (x != 0) else "{:d}".format(int(x)))
         )
-        self.textFPSx = 0.90*max(self.time_vect)
+        self.textFPSx = 0.89*max(self.time_vect)
         self.textFPSy = 1.10*ylim
             
         self.textFPS = self.axRaw.text(self.textFPSx, self.textFPSy, 'FPS: 000')
     
 
+        plt.legend(handles=[self.lineFrqL, self.lineFrqR])
         plt.tight_layout()
         anim = FuncAnimation(self.fig, self.start_listening, self.listen_data, interval=int(1000/DEFAULT_FPS), blit=True)
         #mng = plt.get_current_fig_manager()
