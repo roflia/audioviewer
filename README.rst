@@ -5,4 +5,8 @@ SAMPLE TEXT
 
 2. Choose "Realtek High Definition Audio" as default device.
 
-3. <insert working vid>
+Link: |Youtube|_
+
+.. |Youtube| image:: picture.gif
+.. _Youtube: https://youtu.be/FUk0lSUaAp0
+
