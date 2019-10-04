@@ -17,7 +17,7 @@ DEFAULT_DEVICE = 'Stereo Mix (Realtek'
 DEFAULT_FPS = int(60)
 DEFAULT_WINDOWSIZE = int(2*2)
 RESOLUTION = int(512)
-NBINS = int(64)
+NBINS = int(16*4)
 
 # WIDGET COLOR
 FCOLOR = 'black'
@@ -125,8 +125,12 @@ class Widget:
         self.cid = self.fig.canvas.mpl_connect('resize_event', self.fig_resized)
         self.BARWIDTH = self.size[0]*0.5/NBINS*self.fig.dpi/2
 
-        self.barY = self.freq_vect[::len(self.freq_vect)//NBINS+1]
+        self.cutoff = 0
+        self.barY = self.freq_vect[::len(self.freq_vect)//NBINS]
         self.barX = np.linspace(20,max(self.freq_vect),NBINS)
+        if len(self.barY) != len(self.barX): self.cutoff = abs(len(self.barY)-len(self.barX))
+        self.barY = self.barY[:-self.cutoff]
+        assert len(self.barY) == len(self.barX)
  
         self.axRaw = plt.subplot2grid((10,1),(0,0), rowspan=3)
         self.axFrq = plt.subplot2grid((10,1),(4,0), rowspan=4) 
@@ -205,9 +209,9 @@ class Widget:
             self.lineFrqL.set_ydata(fftLNorm[::self.DR])
             self.lineFrqR.set_ydata(fftRNorm[::self.DR])
             # update bar rectangles
-            for bar, h in zip(self.barFrqL, fftLNorm[::len(fftLNorm)//NBINS+1]):
+            for bar, h in zip(self.barFrqL, fftLNorm[::len(fftLNorm)//NBINS][:-self.cutoff]):
                 bar.set_height(h)
-            for bar, h in zip(self.barFrqR, fftRNorm[::len(fftRNorm)//NBINS+1]):
+            for bar, h in zip(self.barFrqR, fftRNorm[::len(fftRNorm)//NBINS][:-self.cutoff]):
                 bar.set_height(h)
             # calc FPS and show
             delta_t = time.time()-self.t_ref
