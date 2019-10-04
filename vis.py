@@ -15,8 +15,8 @@ import pyaudio
 warnings.filterwarnings('ignore')
 DEFAULT_DEVICE = 'Stereo Mix (Realtek'
 DEFAULT_FPS = 30
-DEFAULT_WINDOWSIZE = 5*2
-RESOLUTION = 512
+DEFAULT_WINDOWSIZE = 2
+RESOLUTION = 512*2
 
 FCOLOR = 'black'
 BCOLOR = 'white'
@@ -97,13 +97,14 @@ class Widget:
         n = self.l.CHUNK*self.l.WINDOWSIZE
         self.DR = n//RESOLUTION
         THRESH = 1/self.l.RATE
-        self.freq_vect = np.fft.rfftfreq(n, 1./self.l.RATE)
+        self.freq_vect = np.fft.fftfreq(n, 1./self.l.RATE)[:int(n/2)]
         self.time_vect = np.arange(n, dtype=np.float32) / self.l.RATE * 1000
         self.fftMaxes = [THRESH,THRESH]        
         self.t_ref = time.time()
 
         # plot objects        
         self.fig = plt.figure()
+        self.fig.set_size_inches(8,5)
         self.axRaw = plt.subplot2grid((5,1),(0,0), rowspan=2)
         self.axFrq = plt.subplot2grid((5,1),(2,0), rowspan=3) 
         self.lineRawL, = self.axRaw.plot(self.time_vect[::self.DR], np.zeros(len(self.time_vect))[::self.DR], Lcolor)
@@ -121,8 +122,8 @@ class Widget:
             FuncFormatter(lambda x, pos: "{:d}ms".format(int(x)) )
         )
         # bot plot
-        self.axFrq.set_title("FRQ (rFFT)", loc='left')
-        self.axFrq.set_yscale('log')
+        self.axFrq.set_title("FRQ", loc='left')
+        #self.axFrq.set_yscale('log')
         #self.axFrq.set_xscale('log')
         self.axFrq.set_ylim(THRESH*5, 1)
         self.axFrq.set_xlim(20, 20000)
@@ -156,12 +157,13 @@ class Widget:
     def start_listening(self, windows, *args, **kwargs):
         try:
             #if np.average(np.abs(windows)) < 5: return
+            n = self.l.CHUNK*self.l.WINDOWSIZE
 
             self.lineRawL.set_ydata(windows[0][::self.DR][::-1]) 
             self.lineRawR.set_ydata(windows[1][::self.DR][::-1]) 
             
-            fftL = np.fft.rfft(windows[0], self.l.CHUNK*self.l.WINDOWSIZE, axis=0, norm="ortho")
-            fftR = np.fft.rfft(windows[1], self.l.CHUNK*self.l.WINDOWSIZE, axis=0, norm="ortho")        
+            fftL = np.fft.fft(windows[0], n, axis=0, norm="ortho")
+            fftR = np.fft.fft(windows[1], n, axis=0, norm="ortho")        
             if fftL.max()>self.fftMaxes[0]: self.fftMaxes[0] = fftL.max() 
             if fftR.max()>self.fftMaxes[1]: self.fftMaxes[1] = fftR.max() 
     
@@ -170,8 +172,8 @@ class Widget:
             #self.lineFrqL.set_ydata(sfftL(self.freq_vect)[::self.DR])
             #self.lineFrqR.set_ydata(sfftR(self.freq_vect)[::self.DR])
 
-            self.lineFrqL.set_ydata(fftL[::self.DR]/self.fftMaxes[0])
-            self.lineFrqR.set_ydata(fftR[::self.DR]/self.fftMaxes[1])
+            self.lineFrqL.set_ydata(fftL[:int(n/2):self.DR]/self.fftMaxes[0])
+            self.lineFrqR.set_ydata(fftR[:int(n/2):self.DR]/self.fftMaxes[1])
             
             delta_t = time.time()-self.t_ref
             self.t_ref = time.time()
