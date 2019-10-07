@@ -1,3 +1,6 @@
+"""
+Obtained basic idea from https://www.swharden.com/wp/2016-07-31-real-time-audio-monitor-with-pyqt/
+"""
 import sys
 import time
 import atexit
@@ -14,10 +17,10 @@ warnings.filterwarnings('ignore') # suppress numpy warning... why is this showin
     
 # WIDGET OPTIONS
 DEFAULT_DEVICE = 'Stereo Mix (Realtek'
-DEFAULT_FPS = int(60)
+DEFAULT_FPS = int(30) #60 doesnt work?
 DEFAULT_WINDOWSIZE = int(2*2)
 RESOLUTION = int(512)
-NBINS = int(16*4)
+NBINS = int(16) #16~64
 
 # WIDGET COLOR
 FCOLOR = 'black'
@@ -110,6 +113,14 @@ class Widget:
         self.n = self.l.CHUNK*self.l.WINDOWSIZE
         
     def init_fig(self, args):
+        self.fig = plt.figure()
+        self.fig.set_size_inches(1300/200,800/200)
+        anim = FuncAnimation(self.fig, self.start_drawing, frames=self.listen_data, \
+            init_func = self.init_anim, \
+            interval=int(10), blit=True)
+        plt.show()
+
+    def init_anim(self, *args, **kwargs):
         Lcolor = 'red'; Rcolor = 'blue';
         self.DR = self.n//RESOLUTION
         THRESH = 1/self.l.RATE
@@ -117,21 +128,19 @@ class Widget:
         self.time_vect = np.arange(self.n, dtype=np.float32) / self.l.RATE * 1000
         self.fftMaxes = [THRESH,THRESH]        
         self.t_ref = time.time()
-
         # plot objects        
-        self.fig = plt.figure()
-        self.fig.set_size_inches(1300/200,800/200)
         self.size = self.fig.get_size_inches()*self.fig.dpi # size in pixels
         self.cid = self.fig.canvas.mpl_connect('resize_event', self.fig_resized)
         self.BARWIDTH = self.size[0]*0.5/NBINS*self.fig.dpi/2
 
+        # prepare bar plot data
         self.cutoff = 0
         self.barY = self.freq_vect[::len(self.freq_vect)//NBINS]
         self.barX = np.linspace(20,max(self.freq_vect),NBINS)
         if len(self.barY) != len(self.barX): self.cutoff = abs(len(self.barY)-len(self.barX))
         self.barY = self.barY[:-self.cutoff]
         assert len(self.barY) == len(self.barX)
- 
+        # prepare subplots and plot initial data
         self.axRaw = plt.subplot2grid((10,1),(0,0), rowspan=3)
         self.axFrq = plt.subplot2grid((10,1),(4,0), rowspan=4) 
         self.axBar = plt.subplot2grid((10,1),(9,0), rowspan=1) 
@@ -139,11 +148,9 @@ class Widget:
         self.lineRawR, = self.axRaw.plot(self.time_vect[::self.DR*2], np.zeros(len(self.time_vect))[::self.DR*2], Rcolor, label='$R_{r}$')
         self.lineFrqL, = self.axFrq.plot(self.freq_vect[::self.DR], np.ones_like(self.freq_vect)[::self.DR], Lcolor, label='$L_{f}$')
         self.lineFrqR, = self.axFrq.plot(self.freq_vect[::self.DR], np.ones_like(self.freq_vect)[::self.DR], Rcolor, label='$R_{f}$')
-
         self.barFrqL = self.axBar.bar(self.barX, self.barY, width=self.BARWIDTH, color='magenta', alpha=0.8)
         self.barFrqR = self.axBar.bar(self.barX, self.barY, width=self.BARWIDTH, color='cyan', alpha=0.8)
-
-        # top plot
+        # adjust top plot
         ylim = 32768/2
         self.axRaw.set_title("RAW - {})".format(self.DEVICE), loc='left')
         self.axRaw.set_ylim(-ylim, ylim)
@@ -153,15 +160,16 @@ class Widget:
         self.axRaw.xaxis.set_major_formatter(
             FuncFormatter(lambda x, pos: "{:d}ms".format(int(x)) )
         )
-        # bot plot
+        # adjust bot plot
         self.axFrq.set_title("FRQ", loc='left')
-        self.axFrq.set_ylim(THRESH*5, 1)
+        self.axFrq.set_ylim(THRESH*1, 1)
         self.axFrq.set_xlim(20, 20000)
+        self.axFrq.set_yscale('log')
         self.axFrq.set_xticks([])
         self.axFrq.set_yticks([0.01, 1])
         self.axFrq.yaxis.set_major_formatter(
             FuncFormatter(lambda y, pos: "{:.2f}".format(y))
-        )
+        ) # bar
         self.axBar.set_yscale('log')
         self.axBar.set_title('',pad=0)
         self.axBar.spines['top'].set_visible(False)
@@ -172,28 +180,24 @@ class Widget:
         self.axBar.xaxis.set_major_formatter(
             FuncFormatter(lambda x, pos: "{:d}KHz".format(int(x/1000)) if (x != 0) else "{:d}".format(int(x)))
         )
-
         # xy location of FPS text
         sc = self.size[0]/self.fig.dpi/6.5
         #print(sc) #DO RELATIVE TXT LOCATION TODO
-
-        self.textFPSx = (0.90*sc)*max(self.time_vect)
-        self.textFPSy = 1.10*ylim
+        self.textFPSx = (0.89*sc)*max(self.time_vect)
+        self.textFPSy = 0.75*ylim
         self.textFPS = self.axRaw.text(self.textFPSx, self.textFPSy, 'FPS: 000')
-    
         plt.legend(handles=[self.lineFrqL, self.lineFrqR], loc=((0.90*sc), (4.5*sc)))
-        #plt.subplots_adjust(bottom=0.1, left=0.1)
-        #plt.tight_layout()
-        anim = FuncAnimation(self.fig, self.start_listening, self.listen_data, \
-            interval=int(1000/DEFAULT_FPS), blit=True)
-        plt.show()
-
+        # return artist objects
+        artObj = tuple([self.lineRawL, self.lineRawR, self.lineFrqL, \
+            self.lineFrqR, self.textFPS]) + tuple(self.barFrqL) + tuple(self.barFrqR)
+        return artObj
+    
     def listen_data(self):
         while True:
             windows = self.l.get_windows()
             yield windows
 
-    def start_listening(self, windows, *args, **kwargs):
+    def start_drawing(self, windows, *args, **kwargs):
         try:
             # show top axes lines
             self.lineRawL.set_ydata(windows[0][::self.DR*2][::-1]) 
@@ -217,9 +221,9 @@ class Widget:
             delta_t = time.time()-self.t_ref
             self.t_ref = time.time()
             self.textFPS.set_text('FPS: {0:0=3d}'.format(int(1/delta_t)))
-            # return value
+            # return artist objects
             artObj = tuple([self.lineRawL, self.lineRawR, self.lineFrqL, \
-                self.lineFrqR ]) + tuple(self.barFrqL) + tuple(self.barFrqR)
+                self.lineFrqR, self.textFPS ]) + tuple(self.barFrqL) + tuple(self.barFrqR)
             return artObj
             
         except Exception as e:
